@@ -5,6 +5,11 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Version variables for easy updates
+val liteRtVersion = "16.4.0"
+val liteRtGpuVersion = "16.4.0"
+val coroutinesVersion = "1.10.2"
+
 android {
     namespace = "com.github.srad.supersupersupeprresolution"
     compileSdk = flutter.compileSdkVersion
@@ -20,10 +25,7 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.github.srad.supersupersupeprresolution"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -32,15 +34,20 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
         }
     }
 }
 
 dependencies {
-    implementation("org.tensorflow:tensorflow-lite-gpu-api:+")
+    // LiteRT (TFLite) with Google Play Services
+    implementation("com.google.android.gms:play-services-tflite-java:$liteRtVersion")
+    implementation("com.google.android.gms:play-services-tflite-support:$liteRtVersion")
+    implementation("com.google.android.gms:play-services-tflite-gpu:$liteRtGpuVersion")
+
+    // Kotlin coroutines for async operations
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutinesVersion")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:$coroutinesVersion")
 }
 
 flutter {

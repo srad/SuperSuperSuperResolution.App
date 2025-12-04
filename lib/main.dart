@@ -1,13 +1,13 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:supersupersuperresolution/models/upscale_config.dart';
+import 'package:supersupersuperresolution/services/upscale_service.dart';
 import 'package:supersupersuperresolution/utils/file_utils.dart';
 import 'package:supersupersuperresolution/utils/image_utils.dart';
-import 'package:tflite_flutter/tflite_flutter.dart';
-import 'package:image/image.dart' as img_lib;
 
 void main() {
   runApp(const MyApp());
@@ -16,27 +16,11 @@ void main() {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'SuperSuperSuperResolution AI Upscaler',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigoAccent),
       ),
       home: const MyHomePage(title: 'SSSR AI Upscaler'),
@@ -54,43 +38,65 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  late Interpreter _interpreter;
-  img_lib.Image? _processedImage;
+  Uint8List? _processedImageBytes;
   bool _isLoading = false;
+  bool _isInitializing = true;
+  String _statusMessage = '';
   File? _selectedImage;
+  SourceImageInfo? _selectedImageInfo;
+
+  // Progress tracking
+  StreamSubscription<UpscaleProgress>? _progressSubscription;
+  UpscaleProgress? _currentProgress;
+
+  // Configuration state
+  DelegateType _delegateType = DelegateType.gpu;
+  static const int _maxInputDimension = 1024;
+
+  UpscaleConfig get _config => UpscaleConfig(
+        delegateType: _delegateType,
+        maxInputDimension: _maxInputDimension,
+      );
 
   @override
   void initState() {
-    // TODO: implement initState
     super.initState();
-    loadModel();
+    _initializeLiteRT();
+  }
+
+  @override
+  void dispose() {
+    _progressSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _initializeLiteRT() async {
+    setState(() => _isInitializing = true);
+
+    final success = await UpscaleService.initialize();
+
+    setState(() {
+      _isInitializing = false;
+      if (success) {
+        _statusMessage = 'Ready${UpscaleService.isGpuAvailable ? ' (GPU available)' : ''}';
+      } else {
+        _statusMessage = 'Failed to initialize LiteRT';
+      }
+    });
   }
 
   Future<void> pickImage() async {
     final image = await FileUtils.pickImage(context);
 
     if (image != null) {
+      final file = File(image.path);
+      final info = await ImageUtils.getImageInfo(file);
+
       setState(() {
-        _selectedImage = File(image.path);
+        _selectedImage = file;
+        _selectedImageInfo = info;
+        _processedImageBytes = null;
       });
-    }
-  }
-
-  @override
-  void dispose() {
-    _interpreter.close();
-    super.dispose();
-  }
-
-  Future<void> loadModel() async {
-    try {
-      _isLoading = true;
-      _interpreter = await Interpreter.fromAsset('assets/models/esrgan.tflite'); // Or your model's filename
-      debugPrint('Interpreter loaded successfully');
-    } catch (e) {
-      debugPrint('Failed to load model: $e');
-    } finally {
-      _isLoading = false;
     }
   }
 
@@ -99,263 +105,303 @@ class _MyHomePageState extends State<MyHomePage> {
 
     setState(() {
       _isLoading = true;
-      _processedImage = null; // Clear previous result
+      _processedImageBytes = null;
+      _statusMessage = 'Starting...';
+      _currentProgress = null;
+    });
+
+    // Listen to progress updates
+    _progressSubscription?.cancel();
+    _progressSubscription = UpscaleService.progressStream.listen((progress) {
+      setState(() {
+        _currentProgress = progress;
+        _statusMessage = progress.message;
+      });
     });
 
     try {
-      final inputTensor = await ImageUtils.preprocessImage(_selectedImage!);
-      final outputTensorData = await runSuperResolution(inputTensor); // This function would call _interpreter.run
-      if (outputTensorData != null) {
-        // Assuming runSuperResolution now directly returns the img_lib.Image
+      final result = await UpscaleService.upscaleWithFallback(
+        _selectedImage!,
+        _config,
+        onProgress: (status) {
+          setState(() => _statusMessage = status);
+        },
+      );
+
+      if (result.success) {
         setState(() {
-          _processedImage = outputTensorData;
+          _processedImageBytes = result.imageBytes;
+          _statusMessage = 'Done! Output: ${result.outputWidth}x${result.outputHeight}';
+          _currentProgress = null;
         });
       } else {
-        // Handle error: show a snackbar or message
-        debugPrint("Super resolution failed.");
+        _showError(result.error ?? 'Unknown error');
       }
     } catch (e) {
-      debugPrint("Error during processing: $e");
-      // Handle error
+      _showError('Processing failed: $e');
     } finally {
+      _progressSubscription?.cancel();
       setState(() {
         _isLoading = false;
+        _currentProgress = null;
       });
     }
   }
 
-  Future<img_lib.Image?> runSuperResolution(List<List<List<List<double>>>> inputTensor) async {
-    if (_interpreter == null) {
-      debugPrint('Interpreter not initialized.');
-      return null;
-    }
-
-    // Define the output tensor based on the model's output shape
-    // Example: If model outputs a 200x200 RGB image
-    var outputShape = _interpreter.getOutputTensor(0).shape; // e.g., [1, 200, 200, 3]
-    var outputType = _interpreter.getOutputTensor(0).type; // e.g., TfLiteType.float32
-
-    // Allocate output tensor
-    // Adjust the nested list structure based on your outputShape and outputType
-    var outputTensor = List.generate(
-      outputShape[0], // Batch size
-          (b) => List.generate(
-        outputShape[1], // Height
-            (h) => List.generate(
-          outputShape[2], // Width
-              (w) => List.filled(outputShape[3], 0.0), // Channels, initialized to 0.0 for float32
-        ),
+  void _showError(String message) {
+    setState(() => _statusMessage = message);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
       ),
     );
-
-
-    try {
-      _interpreter.run(inputTensor, outputTensor);
-
-      // Post-process the output tensor to an image
-      return postprocessOutput(outputTensor, outputShape);
-    } catch (e) {
-      debugPrint('Error running model inference: $e');
-      return null;
-    }
   }
 
-  // Example postprocessing function (adapt based on your model's output)
-  img_lib.Image? postprocessOutput(List<dynamic> outputTensor, List<int> outputShape) {
-    // Assuming outputTensor is [1, height, width, 3] and values are [0,1] floats
-    int height = outputShape[1];
-    int width = outputShape[2];
-    int channels = outputShape[3];
+  void _toggleDelegate() {
+    setState(() {
+      _delegateType = _delegateType == DelegateType.cpu
+          ? DelegateType.gpu
+          : DelegateType.cpu;
+    });
+  }
 
-    var processedOutput = outputTensor[0] as List<List<List<double>>>;
-    var outputImage = img_lib.Image(width: width, height: height);
+  String get _delegateLabel =>
+      _delegateType == DelegateType.cpu ? 'CPU' : 'GPU';
 
-    for (int y = 0; y < height; y++) {
-      for (int x = 0; x < width; x++) {
-        double r = processedOutput[y][x][0];
-        double g = processedOutput[y][x][1];
-        double b = processedOutput[y][x][2];
+  Future<void> _saveWithDialog() async {
+    if (_processedImageBytes == null) return;
 
-        // Denormalize if necessary (e.g., multiply by 255) and clamp
-        int red = (r * 255.0).clamp(0, 255).toInt();
-        int green = (g * 255.0).clamp(0, 255).toInt();
-        int blue = (b * 255.0).clamp(0, 255).toInt();
+    try {
+      final outputFile = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save upscaled image',
+        fileName: 'upscaled_${DateTime.now().millisecondsSinceEpoch}.png',
+        type: FileType.image,
+        allowedExtensions: ['png'],
+        bytes: _processedImageBytes,
+      );
 
-        outputImage.setPixelRgba(x, y, red, green, blue, 255);
+      if (outputFile == null) {
+        // User canceled the picker
+        return;
+      }
+
+      // On Android, bytes are written automatically when provided
+      // On desktop, we need to write manually
+      if (!Platform.isAndroid && !Platform.isIOS) {
+        final file = File(outputFile);
+        await file.writeAsBytes(_processedImageBytes!);
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Saved to: $outputFile')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
-    return outputImage;
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: Text(widget.title),
-      ),
-      body: Center(
-        child: Column(
-          children: [
-            if (_selectedImage != null) Stack(children: [
-              Image.file(_selectedImage!),
-              const Center(child: Text('Input', style: TextStyle(color: Colors.white, fontSize: 25))),//
-            ]),
-            ElevatedButton(onPressed: pickImage, child: Text('Pick Image')),
-            ElevatedButton(onPressed: _processImage, child: Text('Enhance Image')),
-            if (_isLoading) CircularProgressIndicator(),
-            if (_processedImage != null) Image.memory(Uint8List.fromList(img_lib.encodePng(_processedImage!))),
-            if (_processedImage != null) ElevatedButton(onPressed: () => saveProcessedImage(_processedImage), child: Text('Save')),
-          ],
-        )
-      ),
-    );
-  }
-
-  Future<void> saveProcessedImage(img_lib.Image? imageToSave) async {
-    if (imageToSave == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No processed image to save.')),
-      );
-      return;
-    }
-
-    // 1. Encode the image (choose PNG or JPG)
-    // PNG is lossless but results in larger files.
-    // JPG is lossy but results in smaller files. You can specify quality.
-    Uint8List? encodedBytes;
-    String fileExtension;
-    String mimeType;
-
-    // Let's choose PNG for this example for max quality
-    encodedBytes = Uint8List.fromList(img_lib.encodePng(imageToSave));
-    fileExtension = 'png';
-    mimeType = 'image/png';
-
-    // Alternatively, for JPG:
-    // encodedBytes = Uint8List.fromList(img_lib.encodeJpg(imageToSave, quality: 90)); // Quality 0-100
-    // fileExtension = 'jpg';
-    // mimeType = 'image/jpeg';
-
-    if (encodedBytes == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error encoding image.')),
-      );
-      return;
-    }
-
-    try {
-      // 2. Get a directory
-      // For saving to app's document directory (private to the app)
-      final directory = await getApplicationDocumentsDirectory();
-      final String fileName = 'super_resolution_${DateTime.now().millisecondsSinceEpoch}.$fileExtension';
-      final String filePath = '${directory.path}/$fileName';
-
-      // 3. Create the file and write bytes
-      final File imageFile = File(filePath);
-      await imageFile.writeAsBytes(encodedBytes);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Image saved to: $filePath')),
-      );
-      print('Image saved to: $filePath');
-
-      // 4. (Optional) Save to device gallery (requires permissions)
-      // This is a common user expectation.
-      // You might want to ask the user if they want to save to gallery.
-      // await _saveToGallery(context, imageFile, fileName, mimeType);
-
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error saving image: $e')),
-      );
-      print('Error saving image: $e');
-    }
-  }
-
-// Optional: Helper function to save to gallery
-// This uses the permission_handler plugin.
-// For a more robust gallery saving experience, consider `image_gallery_saver` plugin
-// which handles some platform complexities.
-  Future<void> _saveToGallery(BuildContext context, File imageFile, String fileName, String mimeType) async {
-    // Check and request storage permissions
-    // For Android 33+ (SDK Tiramisu), use Permissions.photos if saving only to photo gallery
-    // For older Android, or broader storage, use Permissions.storage or manageExternalStorage
-    PermissionStatus status;
-    if (Platform.isAndroid) {
-      // This is a simplified check. For Android 13+, you might request Permission.photos
-      // For Android 10-12 with scoped storage, saving to public directories is more complex.
-      // `image_gallery_saver` plugin often handles these nuances better.
-      status = await Permission.storage.request();
-    } else if (Platform.isIOS) {
-      status = await Permission.photos.request(); // or photosAddOnly
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Gallery saving not supported on this platform.')),
-      );
-      return;
-    }
-
-    if (status.isGranted) {
-      try {
-        // For a more direct approach to gallery, consider image_gallery_saver.
-        // This is a basic example trying to use path_provider's external directories.
-        // NOTE: getExternalStorageDirectory() might be null or restricted on some platforms/OS versions.
-        Directory? externalDir = await getExternalStorageDirectory(); // Or getExternalStorageDirectories(type: StorageDirectory.pictures).first
-        if (externalDir == null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not access external storage for gallery.')),
-          );
-          return;
-        }
-
-        // Create a path in a common public directory like Pictures
-        // Be mindful of platform-specific conventions and Scoped Storage on Android.
-        final String galleryPath = '${externalDir.path}/Pictures/$fileName'; // Example path
-        final File galleryFile = File(galleryPath);
-
-        // Ensure the directory exists
-        await galleryFile.parent.create(recursive: true);
-
-        // Copy the file from app's private storage (if saved there first) or write directly
-        await imageFile.copy(galleryPath); // If imageFile is from app documents
-        // OR if you haven't saved it yet:
-        // await galleryFile.writeAsBytes(encodedBytesFromAbove);
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Image also copied to gallery (experimental): $galleryPath')),
-        );
-        print('Image copied to gallery (experimental): $galleryPath');
-
-        // To make it immediately visible in Android Gallery, you might need to use MediaScanner
-        // This is where plugins like `image_gallery_saver` shine.
-        // image_gallery_saver.ImageGallerySaver.saveFile(imageFile.path);
-
-
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error copying to gallery: $e')),
-        );
-        print('Error copying to gallery: $e');
-      }
-    } else if (status.isDenied || status.isPermanentlyDenied) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Storage permission denied. Cannot save to gallery.'),
-          action: SnackBarAction(
-            label: 'Settings',
-            onPressed: () {
-              openAppSettings();
-            },
+        actions: [
+          TextButton.icon(
+            onPressed: _isLoading || _isInitializing ? null : _toggleDelegate,
+            icon: Icon(
+              _delegateType == DelegateType.gpu ? Icons.memory : Icons.computer,
+              color: Colors.black87,
+            ),
+            label: Text(
+              _delegateLabel,
+              style: const TextStyle(color: Colors.black87),
+            ),
           ),
-        ),
-      );
-    }
+        ],
+      ),
+      body: _isInitializing
+          ? const Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Initializing LiteRT...'),
+                ],
+              ),
+            )
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Input image section
+                  if (_selectedImage != null) ...[
+                    Card(
+                      child: Column(
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.all(8.0),
+                            child: Text('Input',
+                                style: TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                          Image.file(
+                            _selectedImage!,
+                            height: 200,
+                            fit: BoxFit.contain,
+                          ),
+                          if (_selectedImageInfo != null)
+                            Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: Text(
+                                '${_selectedImageInfo!.dimensionsString} • ${(_selectedImageInfo!.fileSize / 1024).toStringAsFixed(1)} KB'
+                                '${_selectedImageInfo!.exceedsMaxDimension(_maxInputDimension) ? ' (input will be resized to max $_maxInputDimension)' : ''}',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  // Action buttons
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _isLoading ? null : pickImage,
+                          icon: const Icon(Icons.image),
+                          label: const Text('Pick Image'),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed:
+                              _isLoading || _selectedImage == null ? null : _processImage,
+                          icon: const Icon(Icons.auto_awesome),
+                          label: const Text('Enhance'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Progress indicator
+                  if (_isLoading) ...[
+                    if (_currentProgress != null) ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: LinearProgressIndicator(
+                              value: _currentProgress!.fraction,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            _currentProgress!.percentText,
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '${_currentProgress!.message} (${_currentProgress!.current}/${_currentProgress!.total})',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ] else ...[
+                      const LinearProgressIndicator(),
+                      const SizedBox(height: 8),
+                      Text(
+                        _statusMessage,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                  ],
+
+                  // Status message when not loading
+                  if (!_isLoading && _statusMessage.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: Text(
+                        _statusMessage,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+
+                  // Output image section
+                  if (_processedImageBytes != null) ...[
+                    Card(
+                      child: Column(
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.all(8.0),
+                            child: Text('Output (4x)',
+                                style: TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                          Image.memory(
+                            _processedImageBytes!,
+                            fit: BoxFit.contain,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      onPressed: _saveWithDialog,
+                      icon: const Icon(Icons.save),
+                      label: const Text('Save As...'),
+                    ),
+                  ],
+
+                  // Info card
+                  const SizedBox(height: 24),
+                  Card(
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Settings',
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            '• Max input: ${_maxInputDimension}x$_maxInputDimension\n'
+                            '• Output: 4x upscaled (tile-based)\n'
+                            '• Delegate: $_delegateLabel${UpscaleService.isGpuAvailable ? '' : ' (GPU not available)'}\n'
+                            '• Threads: ${_config.numThreads}/${UpscaleConfig.availableProcessors}\n'
+                            '• Runtime: LiteRT (Google Play Services)\n'
+                            '• Model: ESRGAN (50x50 tiles)',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+    );
   }
 }
