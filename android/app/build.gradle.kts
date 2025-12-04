@@ -11,7 +11,7 @@ val liteRtGpuVersion = "16.4.0"
 val coroutinesVersion = "1.10.2"
 
 android {
-    namespace = "com.github.srad.supersupersupeprresolution"
+    namespace = "com.github.srad.magicresolution"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "27.0.12077973"//flutter.ndkVersion
 
@@ -25,7 +25,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.github.srad.supersupersupeprresolution"
+        applicationId = "com.github.srad.magicresolution"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

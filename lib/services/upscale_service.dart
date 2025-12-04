@@ -37,9 +37,9 @@ class UpscaleService {
   // Using the 50x50 fixed input model with tile-based processing
   static const String _modelAssetPath = 'assets/models/esrgan.tflite';
   static const MethodChannel _channel =
-      MethodChannel('com.github.srad.supersupersupeprresolution/litert');
+      MethodChannel('com.github.srad.magicresolution/litert');
   static const EventChannel _progressChannel =
-      EventChannel('com.github.srad.supersupersupeprresolution/progress');
+      EventChannel('com.github.srad.magicresolution/progress');
 
   static bool _isInitialized = false;
   static bool _gpuAvailable = false;
@@ -86,6 +86,16 @@ class UpscaleService {
 
   /// Check if LiteRT is initialized.
   static bool get isInitialized => _isInitialized;
+
+  /// Cancel any ongoing upscale operation.
+  static Future<void> cancel() async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _channel.invokeMethod('cancel');
+    } catch (e) {
+      debugPrint('Failed to cancel: $e');
+    }
+  }
 
   /// Upscales an image using ESRGAN model via LiteRT.
   ///

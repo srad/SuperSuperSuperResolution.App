@@ -1,4 +1,4 @@
-package com.github.srad.supersupersupeprresolution
+package com.github.srad.magicresolution
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -118,7 +118,8 @@ class LiteRtInferenceHandler(private val context: Context) {
             // Create output bitmap (4x upscaled)
             val outputWidth = inputWidth * upscaleFactor
             val outputHeight = inputHeight * upscaleFactor
-            val outputBitmap = Bitmap.createBitmap(outputWidth, outputHeight, Bitmap.Config.ARGB_8888)
+            val outputBitmap =
+                Bitmap.createBitmap(outputWidth, outputHeight, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(outputBitmap)
 
             // Prepare buffers for tile processing
@@ -153,7 +154,8 @@ class LiteRtInferenceHandler(private val context: Context) {
                     outputBuffer.rewind()
 
                     // Convert output buffer to bitmap
-                    val outputTileBitmap = bufferToBitmap(outputBuffer, outputTileSize, outputTileSize)
+                    val outputTileBitmap =
+                        bufferToBitmap(outputBuffer, outputTileSize, outputTileSize)
 
                     // Calculate output position
                     val dstX = tileX * outputTileSize
@@ -165,7 +167,8 @@ class LiteRtInferenceHandler(private val context: Context) {
 
                     if (cropWidth < outputTileSize || cropHeight < outputTileSize) {
                         // Edge tile - need to crop
-                        val croppedTile = Bitmap.createBitmap(outputTileBitmap, 0, 0, cropWidth, cropHeight)
+                        val croppedTile =
+                            Bitmap.createBitmap(outputTileBitmap, 0, 0, cropWidth, cropHeight)
                         canvas.drawBitmap(croppedTile, dstX.toFloat(), dstY.toFloat(), null)
                         croppedTile.recycle()
                     } else {
@@ -176,7 +179,11 @@ class LiteRtInferenceHandler(private val context: Context) {
                     tileBitmap.recycle()
 
                     tilesProcessed++
-                    onProgress?.invoke(tilesProcessed, totalTiles, "Processing tile $tilesProcessed/$totalTiles")
+                    onProgress?.invoke(
+                        tilesProcessed,
+                        totalTiles,
+                        "Processing tile $tilesProcessed/$totalTiles"
+                    )
 
                     if (tilesProcessed % 10 == 0) {
                         android.util.Log.d("LiteRT", "Progress: $tilesProcessed/$totalTiles tiles")

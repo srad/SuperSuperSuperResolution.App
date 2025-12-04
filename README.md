@@ -1,4 +1,4 @@
-# supersupersuperresolution
+# MagicResolution
 
 Simple AI image upscaler
 
