@@ -12,6 +12,7 @@ class ProcessingOverlay extends StatelessWidget {
   final String progressMessage;
   final String statusMessage;
   final double aspectRatio;
+  final bool isGpuMode;
   final VoidCallback onCancel;
 
   const ProcessingOverlay({
@@ -23,6 +24,7 @@ class ProcessingOverlay extends StatelessWidget {
     required this.progressMessage,
     required this.statusMessage,
     required this.aspectRatio,
+    required this.isGpuMode,
     required this.onCancel,
   });
 
@@ -43,6 +45,40 @@ class ProcessingOverlay extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Mode Indicator
+              Container(
+                margin: const EdgeInsets.only(bottom: 32),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: isGpuMode 
+                      ? AppTheme.secondaryLavender.withValues(alpha: 0.2) 
+                      : Colors.grey.shade200,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: isGpuMode ? AppTheme.secondaryLavender : Colors.grey.shade400,
+                    width: 1.5,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isGpuMode ? Icons.bolt_rounded : Icons.speed_rounded,
+                      size: 18,
+                      color: isGpuMode ? AppTheme.primaryPink : Colors.grey.shade700,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      isGpuMode ? "Fast Mode (GPU)" : "Standard Mode (CPU)",
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: isGpuMode ? AppTheme.primaryPink : Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
               // Switch between Tile and Circular progress
               if (useTileProgress && totalTiles > 0)
                 TileProgressIndicator(

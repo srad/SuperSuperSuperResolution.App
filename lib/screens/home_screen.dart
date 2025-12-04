@@ -369,6 +369,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     aspectRatio: _imageInfo != null
                         ? _imageInfo!.width / _imageInfo!.height
                         : 1.0,
+                    isGpuMode: _useGpu,
                     onCancel: _cancelProcessing,
                   ),
                 ),
