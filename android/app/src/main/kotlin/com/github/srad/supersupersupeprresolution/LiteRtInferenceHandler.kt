@@ -7,9 +7,12 @@ import android.graphics.Canvas
 import com.google.android.gms.tflite.client.TfLiteInitializationOptions
 import com.google.android.gms.tflite.gpu.support.TfLiteGpu
 import com.google.android.gms.tflite.java.TfLite
+import org.tensorflow.lite.gpu.GpuDelegateFactory
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import java.util.concurrent.Executors
 import org.tensorflow.lite.InterpreterApi
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
@@ -38,9 +41,13 @@ class LiteRtInferenceHandler(private val context: Context) {
     private var isInitialized = false
     private var gpuAvailable = false
 
-    // Model constants (50x50 input -> 200x200 output, 4x upscale)
-    private val tileSize = 50
-    private val outputTileSize = 200
+    // Single-threaded dispatcher for GPU operations (GPU delegate must run on same thread)
+    private val gpuDispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+
+    // Model constants (128x128 input -> 512x512 output, 4x upscale)
+    // Real-ESRGAN-x4plus from https://huggingface.co/qualcomm/Real-ESRGAN-x4plus
+    private val tileSize = 128
+    private val outputTileSize = 512
     private val upscaleFactor = 4
 
     suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
@@ -75,7 +82,10 @@ class LiteRtInferenceHandler(private val context: Context) {
         maxInputDimension: Int,
         numThreads: Int,
         onProgress: ((current: Int, total: Int, message: String) -> Unit)? = null
-    ): UpscaleResult = withContext(Dispatchers.Default) {
+    ): UpscaleResult {
+        // Use single-threaded dispatcher for GPU (must run on same thread), Default for CPU
+        val dispatcher = if (delegateType == DelegateType.GPU && gpuAvailable) gpuDispatcher else Dispatchers.Default
+        return withContext(dispatcher) {
         if (!isInitialized) {
             return@withContext UpscaleResult(null, "LiteRT not initialized")
         }
@@ -94,10 +104,17 @@ class LiteRtInferenceHandler(private val context: Context) {
 
             android.util.Log.d("LiteRT", "Input image: ${inputWidth}x${inputHeight}")
 
-            // Create interpreter
+            // Create interpreter with appropriate delegate
             val options = InterpreterApi.Options()
                 .setRuntime(InterpreterApi.Options.TfLiteRuntime.FROM_SYSTEM_ONLY)
-                .setNumThreads(numThreads)
+
+            if (delegateType == DelegateType.GPU && gpuAvailable) {
+                android.util.Log.d("LiteRT", "Using GPU delegate")
+                options.addDelegateFactory(GpuDelegateFactory())
+            } else {
+                android.util.Log.d("LiteRT", "Using CPU with $numThreads threads")
+                options.setNumThreads(numThreads)
+            }
 
             val modelBuffer = ByteBuffer.allocateDirect(modelBytes.size)
                 .order(ByteOrder.nativeOrder())
@@ -217,6 +234,7 @@ class LiteRtInferenceHandler(private val context: Context) {
         } finally {
             interpreter?.close()
         }
+        }
     }
 
     private fun resizeIfNeeded(bitmap: Bitmap, maxDimension: Int): Bitmap {
@@ -272,9 +290,10 @@ class LiteRtInferenceHandler(private val context: Context) {
         bitmap.getPixels(pixels, 0, tileSize, 0, 0, tileSize, tileSize)
 
         for (pixel in pixels) {
-            buffer.putFloat(((pixel shr 16) and 0xFF).toFloat()) // R
-            buffer.putFloat(((pixel shr 8) and 0xFF).toFloat())  // G
-            buffer.putFloat((pixel and 0xFF).toFloat())          // B
+            // Normalize to 0-1 range for Real-ESRGAN
+            buffer.putFloat(((pixel shr 16) and 0xFF) / 255.0f) // R
+            buffer.putFloat(((pixel shr 8) and 0xFF) / 255.0f)  // G
+            buffer.putFloat((pixel and 0xFF) / 255.0f)          // B
         }
     }
 
@@ -283,9 +302,10 @@ class LiteRtInferenceHandler(private val context: Context) {
         val pixels = IntArray(width * height)
 
         for (i in pixels.indices) {
-            val r = min(255, max(0, buffer.float.roundToInt()))
-            val g = min(255, max(0, buffer.float.roundToInt()))
-            val b = min(255, max(0, buffer.float.roundToInt()))
+            // Output is 0-1 range, scale back to 0-255
+            val r = min(255, max(0, (buffer.float * 255.0f).roundToInt()))
+            val g = min(255, max(0, (buffer.float * 255.0f).roundToInt()))
+            val b = min(255, max(0, (buffer.float * 255.0f).roundToInt()))
             pixels[i] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
         }
 

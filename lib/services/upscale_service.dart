@@ -34,8 +34,9 @@ class UpscaleProgress {
 }
 
 class UpscaleService {
-  // Using the 50x50 fixed input model with tile-based processing
-  static const String _modelAssetPath = 'assets/models/esrgan.tflite';
+  // Real-ESRGAN-x4plus (128x128 input -> 512x512 output, 4x upscale)
+  // From https://huggingface.co/qualcomm/Real-ESRGAN-x4plus
+  static const String _modelAssetPath = 'assets/models/Real-ESRGAN-x4plus_float.tflite';
   static const MethodChannel _channel =
       MethodChannel('com.github.srad.magicresolution/litert');
   static const EventChannel _progressChannel =

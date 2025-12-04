@@ -45,6 +45,9 @@ dependencies {
     implementation("com.google.android.gms:play-services-tflite-support:$liteRtVersion")
     implementation("com.google.android.gms:play-services-tflite-gpu:$liteRtGpuVersion")
 
+    // TFLite GPU delegate plugin (works with Play Services without conflicts)
+    implementation("org.tensorflow:tensorflow-lite-gpu-delegate-plugin:0.4.4")
+
     // Kotlin coroutines for async operations
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutinesVersion")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:$coroutinesVersion")
