@@ -40,7 +40,7 @@ class ImagePreviewView extends StatelessWidget {
                   Container(
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(8),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.05),
@@ -50,8 +50,9 @@ class ImagePreviewView extends StatelessWidget {
                       ],
                     ),
                     padding: const EdgeInsets.all(8),
+                    margin: const EdgeInsets.all(8),
                     child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(8),
                       child: Image.file(inputImage),
                     ),
                   ),

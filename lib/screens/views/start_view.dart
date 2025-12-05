@@ -56,7 +56,7 @@ class StartView extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            "Pick a photo to add some magic",
+            "Pick a photo to up-size it with magic 🪄",
             style: TextStyle(
               fontSize: 16,
               color: Colors.grey[600],

@@ -40,6 +40,7 @@ class TileProgressIndicator extends StatelessWidget {
           Text(
             "Magic in Progress",
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontSize: 20,
                   fontWeight: FontWeight.bold,
                   color: const Color(0xFFFF80AB),
                 ),
@@ -47,15 +48,19 @@ class TileProgressIndicator extends StatelessWidget {
           const SizedBox(height: 20),
 
           // The Tile Grid
-          AspectRatio(
-            aspectRatio: aspectRatio ?? 1.0,
-            child: CustomPaint(
-              painter: _GridPainter(
-                current: current,
-                total: total,
-                aspectRatio: aspectRatio ?? 1.0,
-                color: const Color(0xFFFF80AB),
-                emptyColor: const Color(0xFFF8BBD0), // Lighter pink
+          Flexible(
+            child: AspectRatio(
+              aspectRatio: aspectRatio != null 
+                  ? (aspectRatio! < 0.5 ? 0.5 : (aspectRatio! > 2.0 ? 2.0 : aspectRatio!))
+                  : 1.0,
+              child: CustomPaint(
+                painter: _GridPainter(
+                  current: current,
+                  total: total,
+                  aspectRatio: aspectRatio ?? 1.0,
+                  color: const Color(0xFFFF80AB),
+                  emptyColor: const Color(0xFFF8BBD0), // Lighter pink
+                ),
               ),
             ),
           ),
@@ -66,7 +71,7 @@ class TileProgressIndicator extends StatelessWidget {
           Text(
             progressMessage,
             style: const TextStyle(
-              fontSize: 36,
+              fontSize: 26,
               fontWeight: FontWeight.w900,
               color: Colors.black87,
             ),

@@ -17,7 +17,6 @@ class SourceImageInfo {
 }
 
 class ImageUtils {
-  static const int defaultMaxDimension = 1024;
   static const int minDimension = 64;
 
   /// Gets basic info about an image file without fully decoding it.
@@ -90,7 +89,7 @@ class ImageUtils {
   /// Returns the processed image and its dimensions.
   static Future<img_lib.Image> preprocessImage(
     File imageFile, {
-    int maxDimension = defaultMaxDimension,
+    required int maxDimension,
   }) async {
     final bytes = await imageFile.readAsBytes();
     var image = img_lib.decodeImage(bytes);

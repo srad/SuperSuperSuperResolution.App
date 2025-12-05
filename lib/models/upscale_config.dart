@@ -18,8 +18,8 @@ class UpscaleConfig {
   final int? _numThreads;
 
   const UpscaleConfig({
-    this.delegateType = DelegateType.cpu,
-    this.maxInputDimension = 1024,
+    required this.delegateType,
+    required this.maxInputDimension,
     int? numThreads,
   }) : _numThreads = numThreads;
 

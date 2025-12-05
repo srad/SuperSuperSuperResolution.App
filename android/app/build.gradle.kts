@@ -34,6 +34,15 @@ android {
 
     buildTypes {
         release {
+            // You can add this line to enable code shrinking, which is likely what triggered the R8 error.
+            isMinifyEnabled = true
+
+            // This line tells R8 to use the default optimization rules and your custom rules.
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -47,6 +56,9 @@ dependencies {
 
     // TFLite GPU delegate plugin (works with Play Services without conflicts)
     implementation("org.tensorflow:tensorflow-lite-gpu-delegate-plugin:0.4.4")
+
+    // AutoValue - needed at compile time for TensorFlow Lite annotations
+    compileOnly("com.google.auto.value:auto-value-annotations:1.11.1")
 
     // Kotlin coroutines for async operations
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutinesVersion")

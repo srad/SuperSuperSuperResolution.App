@@ -81,32 +81,32 @@ class ProcessingOverlay extends StatelessWidget {
 
               // Switch between Tile and Circular progress
               if (useTileProgress && totalTiles > 0)
-                TileProgressIndicator(
-                  current: currentTiles,
-                  total: totalTiles,
-                  progressMessage: progressMessage,
-                  aspectRatio: aspectRatio,
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.5,
+                  ),
+                  child: TileProgressIndicator(
+                    current: currentTiles,
+                    total: totalTiles,
+                    progressMessage: progressMessage,
+                    aspectRatio: aspectRatio,
+                  ),
                 )
               else
                 _buildCircularProgress(),
 
-              const SizedBox(height: 60),
+              const SizedBox(height: 40),
 
               // Cancel Button
-              TextButton.icon(
+              ElevatedButton.icon(
                 onPressed: onCancel,
-                icon: const Icon(Icons.stop_circle_outlined, color: Colors.redAccent),
+                icon: const Icon(Icons.stop_circle_outlined),
                 label: const Text(
                   "Cancel",
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
-                    color: Colors.redAccent,
                   ),
-                ),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
                 ),
               ),
             ],

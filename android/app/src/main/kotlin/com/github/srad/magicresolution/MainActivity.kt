@@ -63,7 +63,7 @@ class MainActivity : FlutterActivity() {
                     val imageBytes = call.argument<ByteArray>("imageBytes")
                     val modelBytes = call.argument<ByteArray>("modelBytes")
                     val delegateType = call.argument<String>("delegateType") ?: "CPU"
-                    val maxInputDimension = call.argument<Int>("maxInputDimension") ?: 1024
+                    val maxInputDimension = call.argument<Int>("maxInputDimension") ?: 2024
                     val numThreads = call.argument<Int>("numThreads") ?: 4
 
                     if (imageBytes == null || modelBytes == null) {

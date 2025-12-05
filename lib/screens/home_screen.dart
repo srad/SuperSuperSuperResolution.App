@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
+import 'package:in_app_review/in_app_review.dart';
 import 'package:magicresolution/models/upscale_config.dart';
 import 'package:magicresolution/screens/views/image_preview_view.dart';
 import 'package:magicresolution/screens/views/processing_overlay.dart';
@@ -14,6 +15,8 @@ import 'package:magicresolution/services/upscale_service.dart';
 import 'package:magicresolution/theme/app_theme.dart';
 import 'package:magicresolution/utils/file_utils.dart';
 import 'package:magicresolution/utils/image_utils.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -124,7 +127,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final config = UpscaleConfig(
       delegateType: _useGpu ? DelegateType.gpu : DelegateType.cpu,
-      maxInputDimension: 1024,
+      maxInputDimension: 2048,
     );
 
     try {
@@ -323,30 +326,84 @@ class _HomeScreenState extends State<HomeScreen> {
                   icon: const Icon(Icons.close_rounded),
                   onPressed: _handleBack,
                   tooltip: 'Close',
-                  color: AppTheme.primaryPink,
-                )
+            color: AppTheme.primaryPink,
+          )
               : null,
           actions: [
             if (_outputImageBytes == null)
               PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert_rounded, color: AppTheme.secondaryLavender),
-                tooltip: 'Settings',
-                onSelected: (value) {
-                  if (value == 'toggle_gpu') {
-                    setState(() {
-                      _useGpu = !_useGpu;
-                    });
-                  }
-                },
-                itemBuilder: (BuildContext context) {
-                  return [
+                  icon: const Icon(Icons.more_vert_rounded,
+                      color: AppTheme.secondaryLavender),
+                  tooltip: 'Settings',
+                  onSelected: (value) => _handleMenuAction(context, value),
+                  itemBuilder: (BuildContext context) =>
+                  [
                     CheckedPopupMenuItem<String>(
                       value: 'toggle_gpu',
                       checked: _useGpu,
-                      child: const Text('Turbo Mode (GPU)'),
+                      child: const Text('Fast Mode (GPU)'),
                     ),
-                  ];
-                },
+                    PopupMenuDivider(),
+                    PopupMenuItem(
+                      value: 'rate',
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.star_rate_rounded,
+                            color: Theme
+                                .of(context)
+                                .iconTheme
+                                .color,
+                          ),
+                          const SizedBox(width: 12),
+                          const Text('Rate this app'),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'instagram',
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.photo_camera,
+                            color: Theme
+                                .of(context)
+                                .iconTheme
+                                .color,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 12),
+                          const Text('Instagram'),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'more_apps',
+                      child: Row(
+                        children: [
+                          Icon(Icons.apps, color: Theme
+                              .of(context)
+                              .iconTheme
+                              .color),
+                          const SizedBox(width: 12),
+                          const Text('More of my Apps'),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'about',
+                      child: Row(
+                        children: [
+                          Icon(Icons.info, color: Theme
+                              .of(context)
+                              .iconTheme
+                              .color),
+                          const SizedBox(width: 12),
+                          const Text('About'),
+                        ],
+                      ),
+                    ),
+                  ]
               ),
           ],
         ),
@@ -405,5 +462,137 @@ class _HomeScreenState extends State<HomeScreen> {
 
     // Case 3: Empty State
     return StartView(onPickImage: _pickImage);
+  }
+
+  Future<void> _handleMenuAction(BuildContext context, String action) async {
+    switch (action) {
+      case 'toggle_gpu':
+        setState(() {
+          _useGpu = !_useGpu;
+        });
+        break;
+      case 'about':
+        final packageInfo = await PackageInfo.fromPlatform();
+        if (context.mounted) {
+          _showAboutDialog(context, packageInfo.version);
+        }
+        break;
+      case 'rate':
+        final InAppReview inAppReview = InAppReview.instance;
+        // Replace with your actual App Store ID and Microsoft Store ID
+        inAppReview.openStoreListing(
+          appStoreId: 'YOUR_APP_STORE_ID',
+          microsoftStoreId: 'YOUR_MICROSOFT_STORE_ID',
+        );
+        break;
+      case 'instagram':
+        _launchUrl('https://www.instagram.com/sedrad_com/');
+        break;
+      case 'more_apps':
+        _launchUrl(
+          'https://play.google.com/store/apps/developer?id=sedrad.com',
+        );
+        break;
+      case 'reset':
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('All adjustments reset')));
+        break;
+    }
+  }
+
+  Future<void> _launchUrl(String urlString) async {
+    final Uri url = Uri.parse(urlString);
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not launch $urlString')));
+      }
+    }
+  }
+
+  void _showAboutDialog(BuildContext context, String version) async {
+    if (!mounted) return;
+
+    final packageInfo = await PackageInfo.fromPlatform();
+
+    showAboutDialog(
+      context: context,
+      applicationName: packageInfo.appName,
+      applicationVersion: "$version+${packageInfo.buildNumber}",
+      applicationLegalese: '© 2025 ${packageInfo.appName}',
+      applicationIcon: Container(
+        width: 100,
+        height: 100,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          image: const DecorationImage(
+            image: AssetImage('assets/icon.png'),
+            fit: BoxFit.cover,
+          ),
+        ),
+      ),
+      children: [
+        const SizedBox(height: 24),
+        const Text('Developer', style: TextStyle(fontWeight: FontWeight.bold)),
+        const Text('Saman Sedighi Rad'),
+        const SizedBox(height: 16),
+        const Text('Website', style: TextStyle(fontWeight: FontWeight.bold)),
+        InkWell(
+          onTap: () => _launchUrl('https://sedrad.com'),
+          child: Text(
+            'https://sedrad.com',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.primary,
+              decoration: TextDecoration.underline,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        const Text('Instagram', style: TextStyle(fontWeight: FontWeight.bold)),
+        InkWell(
+          onTap: () => _launchUrl('https://www.instagram.com/sedrad_com/'),
+          child: Text(
+            '@sedrad_com',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.primary,
+              decoration: TextDecoration.underline,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          'Google Play Store',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        InkWell(
+          onTap: () => _launchUrl(
+            'https://play.google.com/store/apps/developer?id=sedrad.com',
+          ),
+          child: Text(
+            'More Apps on the Play Store',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.primary,
+              decoration: TextDecoration.underline,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        const Text('Rate App', style: TextStyle(fontWeight: FontWeight.bold)),
+        InkWell(
+          onTap: () => _launchUrl(
+            'https://play.google.com/store/apps/details?id=com.github.srad.magicresolution&showAllReviews=true',
+          ),
+          child: Text(
+            'Rate on Play Store',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.primary,
+              decoration: TextDecoration.underline,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
