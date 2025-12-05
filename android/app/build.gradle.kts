@@ -57,9 +57,6 @@ dependencies {
     implementation("com.google.android.gms:play-services-tflite-support:$liteRtVersion")
     implementation("com.google.android.gms:play-services-tflite-gpu:$liteRtGpuVersion")
 
-    // TFLite GPU delegate plugin (works with Play Services without conflicts)
-    implementation("org.tensorflow:tensorflow-lite-gpu-delegate-plugin:0.4.4")
-
     // AutoValue - needed at compile time for TensorFlow Lite annotations
     compileOnly("com.google.auto.value:auto-value-annotations:1.11.1")
 
