@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 class InfoChip extends StatelessWidget {
   final String text;
   final IconData icon;
+  final Color? backgroundColor;
 
   const InfoChip({
     super.key,
     required this.text,
     required this.icon,
+    this.backgroundColor,
   });
 
   @override
@@ -15,7 +17,7 @@ class InfoChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.6),
+        color: backgroundColor ?? Colors.black.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
       ),

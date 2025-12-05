@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:magicresolution/models/upscale_config.dart';
 import 'package:magicresolution/theme/app_theme.dart';
 import 'package:magicresolution/utils/image_utils.dart';
 import 'package:magicresolution/widgets/info_chip.dart';
@@ -59,11 +60,26 @@ class ImagePreviewView extends StatelessWidget {
                   // Info Overlay
                   if (imageInfo != null)
                     Positioned(
-                      bottom: 16,
-                      left: 16,
-                      child: InfoChip(
-                        text: '${imageInfo!.dimensionsString} - ${_formatFileSize(imageInfo!.fileSize)}',
-                        icon: Icons.info_outline_rounded,
+                      bottom: 24,
+                      left: 24,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (imageInfo!.exceedsMaxDimension(UpscaleConfig.defaultMaxInputDimension))
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: InfoChip(
+                                text: 'Will be downscaled to ${UpscaleConfig.defaultMaxInputDimension}px',
+                                icon: Icons.photo_size_select_small_rounded,
+                                backgroundColor: AppTheme.secondaryLavender.withValues(alpha: 0.8),
+                              ),
+                            ),
+                          InfoChip(
+                            text: '${imageInfo!.dimensionsString} - ${_formatFileSize(imageInfo!.fileSize)}',
+                            icon: Icons.info_outline_rounded,
+                          ),
+                        ],
                       ),
                     ),
                 ],

@@ -13,13 +13,15 @@ enum DelegateType {
 }
 
 class UpscaleConfig {
+  static const int defaultMaxInputDimension = 2048;
+
   final DelegateType delegateType;
   final int maxInputDimension;
   final int? _numThreads;
 
   const UpscaleConfig({
     required this.delegateType,
-    required this.maxInputDimension,
+    this.maxInputDimension = defaultMaxInputDimension,
     int? numThreads,
   }) : _numThreads = numThreads;
 

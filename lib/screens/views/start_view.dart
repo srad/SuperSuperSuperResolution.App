@@ -74,7 +74,7 @@ class StartView extends StatelessWidget {
               side: const BorderSide(color: AppTheme.primaryPink, width: 2),
             ),
             onPressed: onPickImage,
-            icon: const Icon(Icons.add_photo_alternate_rounded),
+            icon: const Icon(Icons.add_a_photo),
             label: const Text("Choose Photo"),
           ),
         ],

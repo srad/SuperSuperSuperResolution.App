@@ -138,7 +138,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final config = UpscaleConfig(
       delegateType: _useGpu ? DelegateType.gpu : DelegateType.cpu,
-      maxInputDimension: 2048,
     );
 
     try {
