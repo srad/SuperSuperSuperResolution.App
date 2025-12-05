@@ -4,6 +4,9 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Matrix
+import androidx.exifinterface.media.ExifInterface
+import java.io.ByteArrayInputStream
 import com.google.android.gms.tflite.client.TfLiteInitializationOptions
 import com.google.android.gms.tflite.gpu.support.TfLiteGpu
 import com.google.android.gms.tflite.java.TfLite
@@ -203,9 +206,14 @@ class LiteRtInferenceHandler(private val context: Context) {
                     cachedModelSize = modelBytes.size
                 }
 
-                // Decode input image
-                val originalBitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+                // Decode input image and apply EXIF orientation
+                val decodedBitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
                     ?: return@withContext UpscaleResult(null, "Failed to decode image")
+                val exifRotation = getExifRotation(imageBytes)
+                val originalBitmap = rotateBitmap(decodedBitmap, exifRotation)
+                if (exifRotation != 0) {
+                    android.util.Log.d("LiteRT", "Applied EXIF rotation: $exifRotation degrees")
+                }
 
                 // Resize if needed (cap at maxInputDimension)
                 val inputBitmap = resizeIfNeeded(originalBitmap, maxInputDimension)
@@ -520,5 +528,38 @@ class LiteRtInferenceHandler(private val context: Context) {
 
         bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
         return bitmap
+    }
+
+    /**
+     * Gets the rotation degrees needed based on EXIF orientation from image bytes.
+     */
+    private fun getExifRotation(imageBytes: ByteArray): Int {
+        return try {
+            val exif = ExifInterface(ByteArrayInputStream(imageBytes))
+            when (exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
+                ExifInterface.ORIENTATION_ROTATE_90 -> 90
+                ExifInterface.ORIENTATION_ROTATE_180 -> 180
+                ExifInterface.ORIENTATION_ROTATE_270 -> 270
+                else -> 0
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("LiteRT", "Could not read EXIF orientation", e)
+            0
+        }
+    }
+
+    /**
+     * Rotates a bitmap by the specified degrees. Returns the original bitmap if no rotation needed.
+     */
+    private fun rotateBitmap(bitmap: Bitmap, degrees: Int): Bitmap {
+        if (degrees == 0) return bitmap
+
+        val matrix = Matrix()
+        matrix.postRotate(degrees.toFloat())
+        val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        if (rotated != bitmap) {
+            bitmap.recycle()
+        }
+        return rotated
     }
 }

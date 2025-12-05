@@ -49,6 +49,9 @@ android {
 }
 
 dependencies {
+    // AndroidX ExifInterface for reading image orientation metadata
+    implementation("androidx.exifinterface:exifinterface:1.4.1")
+
     // LiteRT (TFLite) with Google Play Services
     implementation("com.google.android.gms:play-services-tflite-java:$liteRtVersion")
     implementation("com.google.android.gms:play-services-tflite-support:$liteRtVersion")
