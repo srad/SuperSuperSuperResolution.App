@@ -31,12 +31,12 @@ enum class DelegateType {
 }
 
 data class UpscaleResult(
-    val imageBytes: ByteArray?,
+    val outputFilePath: String?,
     val error: String?,
     val outputWidth: Int = 0,
     val outputHeight: Int = 0
 ) {
-    val success: Boolean get() = imageBytes != null && error == null
+    val success: Boolean get() = outputFilePath != null && error == null
 }
 
 class LiteRtInferenceHandler(private val context: Context) {
@@ -81,6 +81,9 @@ class LiteRtInferenceHandler(private val context: Context) {
         if (isInitialized) return@withContext true
 
         try {
+            // Clean up any leftover temp files from previous sessions (crashes, etc.)
+            cleanupTempFiles()
+
             gpuAvailable = try {
                 TfLiteGpu.isGpuDelegateAvailable(context).await()
             } catch (e: Exception) {
@@ -97,6 +100,29 @@ class LiteRtInferenceHandler(private val context: Context) {
         } catch (e: Exception) {
             android.util.Log.e("LiteRT", "Init failed", e)
             false
+        }
+    }
+
+    /**
+     * Cleans up any leftover temp files from previous sessions.
+     * Called on initialization to handle cases where the app crashed or was killed unexpectedly.
+     */
+    private fun cleanupTempFiles() {
+        try {
+            val cacheDir = context.cacheDir
+            val tempFiles = cacheDir.listFiles { file ->
+                file.name.startsWith("upscaled_") && file.name.endsWith(".png")
+            }
+            tempFiles?.forEach { file ->
+                val deleted = file.delete()
+                android.util.Log.d("LiteRT", "Cleanup temp file ${file.name}: ${if (deleted) "deleted" else "failed"}")
+            }
+            val count = tempFiles?.size ?: 0
+            if (count > 0) {
+                android.util.Log.d("LiteRT", "Cleaned up $count leftover temp file(s)")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("LiteRT", "Error cleaning up temp files", e)
         }
     }
 
@@ -343,12 +369,14 @@ class LiteRtInferenceHandler(private val context: Context) {
 
                 val elapsed = System.currentTimeMillis() - startTime
                 android.util.Log.d("LiteRT", "Complete: ${outputWidth}x${outputHeight} in ${elapsed}ms")
-                onProgress?.invoke(totalTiles, totalTiles, "Encoding image...")
+                onProgress?.invoke(totalTiles, totalTiles, "Saving image...")
 
-                // Encode as PNG
-                val outputStream = ByteArrayOutputStream()
-                outputBitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
-                val resultBytes = outputStream.toByteArray()
+                // Save to temp file to avoid OOM when passing through MethodChannel
+                val tempFile = java.io.File(context.cacheDir, "upscaled_${System.currentTimeMillis()}.png")
+                java.io.FileOutputStream(tempFile).use { fos ->
+                    outputBitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                }
+                android.util.Log.d("LiteRT", "Saved to temp file: ${tempFile.absolutePath}")
 
                 // Cleanup
                 if (inputBitmap != originalBitmap) inputBitmap.recycle()
@@ -356,7 +384,7 @@ class LiteRtInferenceHandler(private val context: Context) {
                 outputBitmap.recycle()
 
                 UpscaleResult(
-                    imageBytes = resultBytes,
+                    outputFilePath = tempFile.absolutePath,
                     error = null,
                     outputWidth = outputWidth,
                     outputHeight = outputHeight

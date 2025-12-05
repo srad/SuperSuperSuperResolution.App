@@ -11,7 +11,7 @@ Breathe new life into your low-resolution photos with MagicResolution! Using the
 
 **🚀 Why MagicResolution?**
 
-*   **⚡ Fast Mode (GPU Acceleration):** Experience blazing-fast processing speeds on supported devices. Our advanced engine utilizes your device's GPU for rapid results.
+*   **⚡ Accelerated Mode (GPU Acceleration):** Experience blazing-fast processing speeds on supported devices. Our advanced engine utilizes your device's GPU for rapid results.
 *   **🔒 Privacy First & Offline:** No cloud, no uploads, no data tracking. All processing happens 100% locally on your device. Your photos never leave your phone.
 *   **🧠 Advanced AI Technology:** Powered by the industry-leading Real-ESRGAN-x4plus model, specifically tuned to restore realistic details and textures.
 *   **📱 Simple & Beautiful:** A clean, modern interface with before/after comparisons, real-time tile-based progress updates, and easy sharing.
@@ -20,7 +20,7 @@ Breathe new life into your low-resolution photos with MagicResolution! Using the
 **✨ Key Features:**
 
 *   **4x Upscaling:** Turn 500px images into 2000px HD photos.
-*   **GPU & CPU Support:** Automatically detects your hardware for the best performance, with a manual toggle for "Fast Mode".
+*   **GPU & CPU Support:** Automatically detects your hardware for the best performance, with a manual toggle for "Accelerated Mode".
 *   **Batch Processing Ready:** (Coming soon) Efficiently handle multiple images.
 *   **Smart Preprocessing:** Automatically handles large images to prevent crashes while maintaining maximum quality.
 *   **No Watermarks:** Keep your photos clean and professional.

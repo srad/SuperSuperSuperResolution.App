@@ -9,8 +9,8 @@ import 'package:magicresolution/widgets/info_chip.dart';
 class ResultView extends StatelessWidget {
   final File inputImage;
   final SourceImageInfo? imageInfo;
-  final Uint8List outputImageBytes;
-  final int outputWidth;
+  final Uint8List previewImageBytes; // Display-sized preview (not full resolution)
+  final int outputWidth; // Full resolution dimensions for display
   final int outputHeight;
   final VoidCallback onSave;
 
@@ -18,7 +18,7 @@ class ResultView extends StatelessWidget {
     super.key,
     required this.inputImage,
     required this.imageInfo,
-    required this.outputImageBytes,
+    required this.previewImageBytes,
     required this.outputWidth,
     required this.outputHeight,
     required this.onSave,
@@ -35,7 +35,7 @@ class ResultView extends StatelessWidget {
             fit: BoxFit.contain,
           ),
           afterImage: Image.memory(
-            outputImageBytes,
+            previewImageBytes,
             fit: BoxFit.contain,
           ),
         ),

@@ -1,10 +1,9 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:image/image.dart' as img;
 import 'package:in_app_review/in_app_review.dart';
 import 'package:magicresolution/models/upscale_config.dart';
 import 'package:magicresolution/screens/views/image_preview_view.dart';
@@ -14,7 +13,9 @@ import 'package:magicresolution/screens/views/start_view.dart';
 import 'package:magicresolution/services/upscale_service.dart';
 import 'package:magicresolution/theme/app_theme.dart';
 import 'package:magicresolution/utils/file_utils.dart';
+import 'package:magicresolution/utils/image_processor.dart';
 import 'package:magicresolution/utils/image_utils.dart';
+import 'package:magicresolution/widgets/save_options_dialog.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -29,7 +30,8 @@ class _HomeScreenState extends State<HomeScreen> {
   // State
   File? _inputImage;
   SourceImageInfo? _imageInfo;
-  Uint8List? _outputImageBytes;
+  Uint8List? _outputImageBytes; // Full resolution for saving
+  Uint8List? _previewImageBytes; // Display resolution for preview
   int _outputWidth = 0;
   int _outputHeight = 0;
   bool _isProcessing = false;
@@ -40,6 +42,7 @@ class _HomeScreenState extends State<HomeScreen> {
   double _progressValue = 0.0;
   int _totalTiles = 0;
   int _currentTiles = 0;
+  bool _isPostProcessing = false; // True when upscaling done, preparing result
 
   // System State
   bool _isSystemReady = false;
@@ -97,6 +100,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _inputImage = null;
       _imageInfo = null;
       _outputImageBytes = null;
+      _previewImageBytes = null;
     });
   }
 
@@ -121,6 +125,13 @@ class _HomeScreenState extends State<HomeScreen> {
           _totalTiles = progress.total;
           _progressMessage = '${(progress.fraction * 100).toInt()}%';
           _statusMessage = progress.message;
+
+          // Switch to post-processing UI as soon as we hit 100%
+          // (native code is still saving the file, but tiles are done)
+          if (progress.fraction >= 1.0 && !_isPostProcessing) {
+            _isPostProcessing = true;
+            _statusMessage = 'Saving image...';
+          }
         });
       }
     });
@@ -144,14 +155,31 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
 
       if (result.success) {
-        Uint8List finalBytes = result.imageBytes!;
+        // Switch to post-processing mode (show different UI)
+        setState(() {
+          _isPostProcessing = true;
+          _statusMessage = 'Reading result...';
+        });
+
+        // Allow UI to update before heavy work
+        await Future.delayed(const Duration(milliseconds: 50));
+
+        // Read bytes from temp file (avoids OOM during MethodChannel transfer)
+        final imageBytes = await result.readImageBytes();
+        if (imageBytes == null) {
+          _showSnack('Failed to read upscaled image', isError: true);
+          return;
+        }
+
+        Uint8List finalBytes = imageBytes;
         int finalWidth = result.outputWidth;
         int finalHeight = result.outputHeight;
 
         if (scaleFactor == 2) {
           setState(() => _statusMessage = 'Downsampling to 2x...');
-          final downsampled = await _downsampleImage(
-            result.imageBytes!,
+          await Future.delayed(const Duration(milliseconds: 50)); // Allow UI update
+          final downsampled = await ImageProcessor.downsample(
+            imageBytes,
             result.outputWidth ~/ 2,
             result.outputHeight ~/ 2,
           );
@@ -160,8 +188,25 @@ class _HomeScreenState extends State<HomeScreen> {
           finalHeight = downsampled.height;
         }
 
+        // Generate preview image for display (max display resolution)
+        setState(() => _statusMessage = 'Preparing preview...');
+        await Future.delayed(const Duration(milliseconds: 50)); // Allow UI update
+        Uint8List previewBytes;
+        try {
+          previewBytes = await ImageProcessor.generatePreview(finalBytes, finalWidth, finalHeight);
+        } catch (e) {
+          debugPrint('Preview generation failed: $e');
+          _showSnack('Failed to generate preview: $e', isError: true);
+          await result.cleanup(); // Clean up temp file
+          return;
+        }
+
+        // Clean up temp file after we've read the bytes
+        await result.cleanup();
+
         setState(() {
           _outputImageBytes = finalBytes;
+          _previewImageBytes = previewBytes;
           _outputWidth = finalWidth;
           _outputHeight = finalHeight;
         });
@@ -177,30 +222,10 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) {
         setState(() {
           _isProcessing = false;
+          _isPostProcessing = false;
         });
       }
     }
-  }
-
-  Future<({Uint8List bytes, int width, int height})> _downsampleImage(
-    Uint8List imageBytes,
-    int targetWidth,
-    int targetHeight,
-  ) async {
-    final image = img.decodeImage(imageBytes);
-    if (image == null) {
-      return (bytes: imageBytes, width: targetWidth * 2, height: targetHeight * 2);
-    }
-
-    final resized = img.copyResize(
-      image,
-      width: targetWidth,
-      height: targetHeight,
-      interpolation: img.Interpolation.cubic,
-    );
-
-    final pngBytes = Uint8List.fromList(img.encodePng(resized));
-    return (bytes: pngBytes, width: targetWidth, height: targetHeight);
   }
 
   void _cancelProcessing() {
@@ -215,26 +240,86 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _saveImage() async {
     if (_outputImageBytes == null) return;
 
+    // Show save options dialog
+    final saveOptions = await _showSaveOptionsDialog();
+    if (saveOptions == null) return; // User cancelled
+
+    // Show loading dialog
+    _showSavingDialog();
+
     try {
-      final fileName = 'upscaled_${DateTime.now().millisecondsSinceEpoch}.png';
+      // Encode image in chosen format (run in isolate to avoid UI freeze)
+      final Uint8List outputBytes;
+      final String extension;
+
+      if (saveOptions.format == ImageFormat.png) {
+        outputBytes = _outputImageBytes!; // Already PNG
+        extension = 'png';
+      } else {
+        // Convert to JPG with quality setting in a separate isolate
+        outputBytes = await ImageProcessor.encodeToJpg(_outputImageBytes!, saveOptions.quality);
+        extension = 'jpg';
+      }
+
+      // Dismiss loading dialog before showing file picker
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+
+      final fileName = 'upscaled_${DateTime.now().millisecondsSinceEpoch}.$extension';
       final outputFile = await FilePicker.platform.saveFile(
         dialogTitle: 'Save Image',
         fileName: fileName,
         type: FileType.image,
-        allowedExtensions: ['png'],
-        bytes: _outputImageBytes,
+        allowedExtensions: [extension],
+        bytes: outputBytes,
       );
 
       if (outputFile == null) return;
 
       if (!Platform.isAndroid && !Platform.isIOS) {
-        await File(outputFile).writeAsBytes(_outputImageBytes!);
+        await File(outputFile).writeAsBytes(outputBytes);
       }
 
-      _showSnack('Image saved!');
+      _showSnack('Image saved as ${extension.toUpperCase()}!');
     } catch (e) {
+      // Dismiss loading dialog on error
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
       _showSnack('Failed to save: $e', isError: true);
     }
+  }
+
+  void _showSavingDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          content: const Padding(
+            padding: EdgeInsets.symmetric(vertical: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 20),
+                Text('Preparing image...', style: TextStyle(fontWeight: FontWeight.w500)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<SaveOptions?> _showSaveOptionsDialog() async {
+    return showDialog<SaveOptions>(
+      context: context,
+      builder: (context) => const SaveOptionsDialog(),
+    );
   }
 
   void _showSnack(String msg, {bool isError = false}) {
@@ -250,6 +335,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _handleBack() async {
+    // Block back navigation during post-processing (can't cancel at this stage)
+    if (_isPostProcessing) {
+      return;
+    }
+
     // If processing, cancel and go to start
     if (_isProcessing) {
       _cancelAndReset();
@@ -294,9 +384,11 @@ class _HomeScreenState extends State<HomeScreen> {
     _progressSubscription = null;
     setState(() {
       _isProcessing = false;
+      _isPostProcessing = false;
       _inputImage = null;
       _imageInfo = null;
       _outputImageBytes = null;
+      _previewImageBytes = null;
       _progressValue = 0.0;
       _currentTiles = 0;
       _totalTiles = 0;
@@ -321,7 +413,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Magic Resolution'),
-          leading: _inputImage != null
+          leading: _inputImage != null && !_isPostProcessing
               ? IconButton(
                   icon: const Icon(Icons.close_rounded),
                   onPressed: _handleBack,
@@ -341,7 +433,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     CheckedPopupMenuItem<String>(
                       value: 'toggle_gpu',
                       checked: _useGpu,
-                      child: const Text('Fast Mode (GPU)'),
+                      child: const Text('Accelerated Mode (GPU)'),
                     ),
                     PopupMenuDivider(),
                     PopupMenuItem(
@@ -427,6 +519,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ? _imageInfo!.width / _imageInfo!.height
                         : 1.0,
                     isGpuMode: _useGpu,
+                    isPostProcessing: _isPostProcessing,
                     onCancel: _cancelProcessing,
                   ),
                 ),
@@ -439,11 +532,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildContent() {
     // Case 1: Result (Before/After)
-    if (_outputImageBytes != null && _inputImage != null) {
+    if (_outputImageBytes != null && _previewImageBytes != null && _inputImage != null) {
       return ResultView(
         inputImage: _inputImage!,
         imageInfo: _imageInfo,
-        outputImageBytes: _outputImageBytes!,
+        previewImageBytes: _previewImageBytes!,
         outputWidth: _outputWidth,
         outputHeight: _outputHeight,
         onSave: _saveImage,

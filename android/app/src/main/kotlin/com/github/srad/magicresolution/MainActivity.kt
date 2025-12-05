@@ -96,7 +96,7 @@ class MainActivity : FlutterActivity() {
                             if (upscaleResult.success) {
                                 result.success(mapOf(
                                     "success" to true,
-                                    "imageBytes" to upscaleResult.imageBytes,
+                                    "outputFilePath" to upscaleResult.outputFilePath,
                                     "outputWidth" to upscaleResult.outputWidth,
                                     "outputHeight" to upscaleResult.outputHeight
                                 ))

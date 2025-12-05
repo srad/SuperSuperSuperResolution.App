@@ -7,19 +7,44 @@ import 'package:flutter/services.dart';
 import '../models/upscale_config.dart';
 
 class UpscaleResult {
-  final Uint8List? imageBytes;
+  final String? outputFilePath; // Path to temp file containing the upscaled image
   final String? error;
   final int outputWidth;
   final int outputHeight;
 
   UpscaleResult({
-    this.imageBytes,
+    this.outputFilePath,
     this.error,
     this.outputWidth = 0,
     this.outputHeight = 0,
   });
 
-  bool get success => imageBytes != null && error == null;
+  bool get success => outputFilePath != null && error == null;
+
+  /// Reads the image bytes from the output file.
+  /// Call this only when you need the actual bytes (e.g., for saving or creating preview).
+  Future<Uint8List?> readImageBytes() async {
+    if (outputFilePath == null) return null;
+    try {
+      return await File(outputFilePath!).readAsBytes();
+    } catch (e) {
+      debugPrint('Failed to read output file: $e');
+      return null;
+    }
+  }
+
+  /// Deletes the temp output file. Call this when done with the result.
+  Future<void> cleanup() async {
+    if (outputFilePath == null) return;
+    try {
+      final file = File(outputFilePath!);
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (e) {
+      debugPrint('Failed to cleanup temp file: $e');
+    }
+  }
 }
 
 class UpscaleProgress {
@@ -140,7 +165,7 @@ class UpscaleService {
 
       if (result?['success'] == true) {
         return UpscaleResult(
-          imageBytes: result!['imageBytes'] as Uint8List?,
+          outputFilePath: result!['outputFilePath'] as String?,
           outputWidth: result['outputWidth'] as int? ?? 0,
           outputHeight: result['outputHeight'] as int? ?? 0,
         );
